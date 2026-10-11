@@ -16,7 +16,7 @@ Out method to generate a trajectory to follow is to compute some control points 
 
 For example: we want to draw a circle C with our leg in a time T. We place 5 points on circle C and, knowing time T, compute velocities for them in 3D space. 
 
-![Cycle](../../images/cycle_example.jpg)
+![Cycle](../../images/circle.jpg)
 
 To generate smooth movement the cubic interpolation is used:
 
@@ -46,7 +46,7 @@ The trajectory between the steps is approximated with cubic interpolation.
 
 For example: same circle with 5 points, the parts of circle between the points are steps.
 
-![changing cycle on a fly](../../images/smooth_cycle.jpg)
+![changing cycle on a fly](../../images/cycles.jpg)
 
 What if we want to change the plane in which circle is existing to a different one smoothly?
 In our implementation we generate a separate cycle for this new circle, then we look which step of the initial cycle the end-effector moves along.
@@ -185,7 +185,7 @@ at zero — the foot lifts off and lands gently.
 
 it provides us beautiful shape:
 
-![Bezier arc](../../images/desmos_screen1.jpg)
+![Bezier arc](../../images/desmos_screen1.png)
 
 **Stance** — foot on the ground, moving backward at body speed. A
 straight line in the body frame from the touchdown point back to the
