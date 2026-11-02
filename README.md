@@ -193,7 +193,7 @@ P4 = (l,        0,   0   )
 
 This provides us a beautiful shape:
 
-![bezier step shape](./images/bezier2.jpg)
+![bezier step shape](./images/bezier2.png)
 
 The Bézier is evaluated at `t ∈ [0, 1]` directly — no easing function
 is applied on top. The derivative `B'(t)` is computed analytically from
