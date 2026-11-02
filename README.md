@@ -69,7 +69,7 @@ The system is split across two processors:
   │   (in future)    │  /esp/speed  ───► │  inverse kinematics  │
   │                  │  (service)        │  Jacobian / DLS      │
   └──────────────────┘                   │  polynomial eval     │
-                                         │  servo PWM           │
+                                         │  PCA9685 servo PWM   │
                                          └──────────────────────┘
 ```
 
@@ -83,19 +83,20 @@ hardware while letting the PC run whatever high-level logic it wants.
 
 All internal computation is in a single consistent set of units.
 
-| Quantity                | Unit    | Where it lives                       |
-|-------------------------|---------|--------------------------------------|
-| Link lengths            | cm      | `leg_t.LinkLengths`                  |
-| Cartesian positions     | cm      | trajectory generators, IK, Jacobian  |
-| Cartesian velocities    | cm/s    | trajectory generators, Jacobian      |
-| Joint angles            | radians | IK output, coefficients, servo eval  |
-| Joint angular velocities| rad/s   | Jacobian output, coefficients        |
-| Joint offsets / home    | radians | `leg_t.JointOffsets`, `JointHome`    |
-| Servo pulse widths      | µs      | servo write, hardware boundary       |
+| Quantity                | Unit    | Where it lives                                    |
+|-------------------------|---------|---------------------------------------------------|
+| Link lengths            | cm      | `leg_t.Geometry.LinkLengths`                      |
+| Cartesian positions     | cm      | trajectory generators, IK, Jacobian               |
+| Cartesian velocities    | cm/s    | trajectory generators, Jacobian                   |
+| Joint angles            | radians | IK output, coefficients, servo eval               |
+| Joint angular velocities| rad/s   | Jacobian output, coefficients                     |
+| Joint offsets / home    | radians | `leg_t.Geometry.JointOffsets`, `.JointHome`       |
+| Servo pulse widths      | µs      | servo write, hardware boundary                    |
+| Servo command angles    | degrees | `leg_t.Servos.ServoAngles`                        |
 
 **Radians everywhere in the pipeline.** Degrees appear only inside the
-servo write function, where `RAD2DEG` is applied immediately before
-`writeMicroseconds`. No other layer knows about degrees.
+servo write function, where `RAD2DEG` is applied immediately before the
+µs conversion for the PCA9685. No other layer knows about degrees.
 
 **Frame:** X forward, Y left, Z up. The hip is the origin. Positive X
 moves the foot forward, positive Y moves the foot left, positive Z lifts
@@ -172,24 +173,52 @@ with the damping factor chosen adaptively:
 The foot traces a repeating loop in the body frame. The loop has two
 phases:
 
-**Swing** — foot in the air, moving forward. The trajectory is a cubic Bezier arc with following control points:
+**Swing** — foot in the air, moving forward. The trajectory is a
+**quartic (degree-4) Bézier** with five control points. The control
+points are chosen so that the foot's velocity at both endpoints matches
+the stance velocity, giving a smooth handoff between phases for any
+duty cycle.
 
-- `P0 = (0, 0, 0)` 
-- `P1 = (0, 0, h)` 
-- `P2 = (L, 0, h)` 
-- `P3 = (L, 0, 0)` 
+For a swing along one axis with stroke length `l` and lift height `h`:
 
-where `L = swing_time · x_speed` and `h = 0.3·|L|`. The parameter is
-eased with a smoothstep `e(t) = 3t² − 2t³` so velocity starts and ends
-at zero — the foot lifts off and lands gently.
+```
+k = swing_time / (4 · stance_time)        (edge-velocity match factor)
 
-it provides us beautiful shape:
+P0 = (0,        0,   0   )
+P1 = (−k·l,     0,   0   )
+P2 = (l,        0,   0.5·h·(1/0.375) )    (i.e. p2.z = 1.333·h)
+P3 = ((1+k)·l,  0,   0   )
+P4 = (l,        0,   0   )
+```
 
-![Bezier arc](./images/desmos_screen1.png)
+This provides us a beautiful shape:
+
+![bezier step shape](./images/bezier2.jpg)
+
+The Bézier is evaluated at `t ∈ [0, 1]` directly — no easing function
+is applied on top. The derivative `B'(t)` is computed analytically from
+the same control points.
+
+Peak Z during the swing is `0.5·h` for that axis. Because both the X
+and Y swing generators always emit their own Z arc (regardless of the
+axis's speed), the superposition step produces a peak lift of exactly
+`h` in every direction — pure-X, pure-Y, and diagonal alike. This is a
+deliberate design choice for predictable foot clearance.
+
+Edge velocities of the swing:
+```
+v(0) = 4·(P1.x − P0.x) / swing_time = −l / stance_time
+v(1) = 4·(P4.x − P3.x) / swing_time = −l / stance_time
+```
+which matches stance velocity by construction for any duty cycle.
 
 **Stance** — foot on the ground, moving backward at body speed. A
-straight line in the body frame from the touchdown point back to the
-start of the next stride.
+straight line in the body frame, **constant velocity**, no easing:
+
+```
+x(t) = x_start − x_speed · t,    t ∈ [0, stance_time]
+ẋ(t) = −x_speed
+```
 
 The two phases are generated independently, then concatenated into a
 single cycle buffer with `n_points = n_swing + n_stance + 1`.
@@ -200,24 +229,28 @@ X and Y trajectories are generated independently as separate Cartesian
 paths, then summed:
 
 ```
-pos_combined = pos_x + pos_y
+pos_combined = pos_x + pos_y − start
 vel_combined = vel_x + vel_y
 ```
 
-For Z, the two axes each contribute a lift; taking the sum double-counts
-the swing height on diagonal motion. The current implementation uses the
-**larger** of the two contributions:
+The `− start` on position compensates for the neutral pose being baked
+into both axes. Velocities are pure derivatives and add directly.
 
-```
-pos_z = max(pos_x.z, pos_y.z)
-vel_z = (corresponding axis's vel.z)
-```
+For Z, both axes contribute `0.5·h` during swing (regardless of that
+axis's speed), so the sum produces `h` total lift in every direction.
+During stance, both axes contribute zero lift, and the sum reduces to
+`start.z`.
 
 ## 5. Layer 3 — Cycles and steps
 
 A **step** covers one `StepTime`-long segment of a trajectory. A
 **cycle** is a fixed-length sequence of steps that closes on itself
 (foot ends where it began).
+
+Each swing or stance trajectory generator produces `n + 1` samples
+(position + velocity) which are then IK'd into joint space. Adjacent
+samples become the endpoints of a step. Within each step, a cubic
+Hermite interpolates the joint trajectory between the endpoints.
 
 `step_t` stores:
 
@@ -252,19 +285,22 @@ q(t) = ((a·t + b)·t + c)·t + d
 
 ## 6. Layer 4 — Gait state machine
 
-Two cycles coexist at all times:
+Every leg maintains two cycles:
 
-**Inertial cycle** — the reference. Regenerated whenever a new speed
-command arrives. Anchored at a fixed neutral foot pose (deliberately not
-at the current pose, to avoid pulling the leg outside its workspace when
-commands change).
+**Inertial cycle** (one per leg) — the reference. Regenerated whenever
+a new speed command arrives. The command is first rotated into the leg's
+local frame using `BaseRotOffsets[2]` (each leg is mounted at a different
+yaw angle on the body). The inertial cycle is anchored at a fixed
+neutral pose (`EFHome`) so that the leg is never asked to reach a
+position outside its workspace on startup.
 
-**Main cycle** — what the servos actually follow. Maintained incrementally
-via a receding-horizon scheme.
+**Main cycle** (one per leg) — what the servos actually follow.
+Maintained incrementally via a receding-horizon scheme.
 
 ### 6.1 The receding-horizon update
 
-Let `i` be the currently executing step. On each step transition:
+Let `i` be the currently executing step of a given leg. On each step
+transition:
 
 ```
 main.step[i+1].start = main.step[i].end              (continuity)
@@ -285,12 +321,28 @@ Two key properties:
   cycle's absolute position, not a relative displacement. This is a
   deliberate choice. Relative displacement accumulates errors — servo
   lag, foot slip, external disturbance — and the leg drifts. Absolute
-  targets pull the leg back toward the reference every step. The tradeoff
-  is that if the leg is far from the reference, the step is large. Since
-  the reference is regenerated from a fixed neutral pose on every command
-  change, the "far from reference" case doesn't arise in normal operation.
+  targets pull the leg back toward the reference every step.
 
-### 6.2 Stopping
+### 6.2 Multi-leg coordination
+
+All six legs run the same state machine, but with **phase offsets** so
+that the gait pattern is a tripod: three legs swing while three legs
+support. The phase offset is set at initialization time and preserved
+through the receding-horizon updates (each leg independently advances
+its own step counter).
+
+Two diagonal tripods alternate:
+
+```
+Tripod A: LF (300°), RM (180°), LR (60°)
+Tripod B: RF (240°), LM (0°),  RR (120°)
+```
+
+The grouping is chosen so each tripod contains one front, one middle,
+and one rear foot, with the body's center of mass always inside the
+support polygon.
+
+### 6.3 Stopping
 
 Zero speed produces a constant inertial cycle: all endpoints equal to
 the neutral pose, all velocities zero. The Hermite polynomials collapse
@@ -299,15 +351,17 @@ to constants, and the leg holds position.
 ## 7. Runtime and timers
 
 Two RCL timers drive the system, both running in the micro-ROS executor
-at 20 ms period (50 Hz).
+at 20 ms period (50 Hz). Both iterate over all six legs.
 
-**Motion timer** — `gait_motion_tick()`:
+**Motion timer** — `gait_motion_tick(leg)` for each leg:
 
-1. If `cmd_dirty`, regenerate the inertial cycle.
-2. Check elapsed time since the current step started.
-3. If `elapsed ≥ StepTime`, advance to the next step.
+1. If `cmd_dirty`, regenerate the inertial cycle for all legs
+   (rotating the body command into each leg's local frame).
+2. For each leg: check elapsed time since the current step started.
+3. If `elapsed ≥ StepTime`, advance that leg's step counter and update
+   the next step's endpoint and coefficients.
 
-**Servo timer** — `gait_servo_tick()`:
+**Servo timer** — `gait_servo_tick(leg)` for each leg:
 
 1. Read the current step and elapsed time.
 2. Evaluate all three joint polynomials at that time.
@@ -327,51 +381,59 @@ Speed commands arrive on a ROS 2 service:
 
 ```
 # spider_interfaces/srv/SpiderSpeed
-float32[2] data      # [x_speed, y_speed] in cm/s
+float32[2] data      # [x_speed, y_speed] in cm/s (body frame)
 ---
 int16 err            # 0 = OK, negative = error
 ```
 
 The callback sets `cmd_x_speed`, `cmd_y_speed`, and raises `cmd_dirty`.
-The motion timer picks this up on its next tick and regenerates the
-inertial cycle. Because the update is deferred, the service call returns
-immediately and doesn't block the executor.
+The motion timer picks this up on its next tick and regenerates each
+leg's inertial cycle. Because the update is deferred, the service call
+returns immediately and doesn't block the executor.
+
+A separate `Int16MultiArray` topic (`/esp/servos`) allows direct servo
+override in degrees, used for calibration. The topic is broadcast to all
+legs (fine for offsets that apply to all four legs of a given pair, not
+fine for per-leg calibration — that's a known limitation of the current
+version).
 
 ## 9. Current state and roadmap
 
 ### Implemented
 
 - Kinematics: FK, IK, analytic Jacobian, DLS solve
-- Trajectory: cubic Bézier swing, linear stance, XY Cartesian superposition
+- Trajectory: **quartic** Bézier swing with edge-velocity matching, linear stance, XY Cartesian superposition
 - Cycle: cubic Hermite coefficient generation, local-time polynomial form
-- Gait: two-cycle receding-horizon state machine, 50/50 duty
+- Gait: two-cycle receding-horizon state machine, 50/50 duty, six-leg tripod with phase offsets
+- **Base yaw**: each leg's body command is rotated into leg-local frame via `BaseRotOffsets[2]`
+- **Wake-up sequence**: blocking two-stage stand-up in `awakeness.cpp` (left/right or diagonal tripods)
+- **Servo output**: dual PCA9685 over I²C, per-servo driver/channel assignment
 - Runtime: two-timer architecture, stop/hold behavior
-- Interface: `SpiderSpeed` service, debug topic, servo override topic
+- Interface: `SpiderSpeed` service, debug topic, servo override topic (calibration only)
 
 ### Not yet implemented
 
-- **Multi-leg coordination.** Phase offsets between legs (tripod, ripple,
-  wave gaits) are not implemented. The current code drives one leg.
-- **Body transforms.** Turning, body pitch/roll, IMU stabilization. All
-  of these compose with the per-leg Cartesian target before IK, in a
-  layer between gait and kinematics.
-- **Alternative trajectory shapes.** The Bézier is the only swing shape;
-  Chebyshev or cycloid profiles may produce smoother motion at higher
-  speeds. The shape interface isn't yet abstracted.
+- **Body transforms.** Turning (Rspeed), body pitch/roll, IMU stabilization. All of these compose with the per-leg Cartesian target before IK, in a layer between gait and kinematics.
+- **Alternative trajectory shapes.** The quartic Bézier is the only swing shape; Chebyshev or cycloid profiles may produce smoother motion at higher speeds. The shape interface isn't yet abstracted.
+- **Per-leg servo calibration over the topic.** Currently the servo topic broadcasts to all legs.
+- **Failure recovery.** If IK returns `OUT_OF_REACH` or `DEGENERATE` mid-cycle, the current code silently passes through (the cycle is still packed with clamped values). Future versions should hold the previous pose or abort the cycle.
 
 ## 10. Files
 
 ```
-esp_spider3/
-├── esp_spider3.ino       micro-ROS plumbing, state machine, callbacks
-├── structs.h / .cpp      leg_t, point_t, step_t, cycle_t; init/coeff math
+esp_spider4/
+├── esp_spider4.ino       micro-ROS plumbing, state machine, callbacks
+├── structs.h / .cpp      point_t, step_t, cycle_t, leg_t, spider_t; init/coeff math
 ├── kinematics.h / .cpp   FK, IK, Jacobian, DLS
-├── trajectory.h / .cpp   per-axis generators, superposition, step_cycle
-├── gait.h / .cpp         main + inertial cycle state machine
-└── esp_node.h / .cpp     servo-angle conversion, unit helpers
+├── trajectory.h / .cpp   per-axis swing/stance, superposition, step_cycle
+├── gait.h / .cpp         main + inertial cycle state machine, per-leg
+├── awakeness.h / .cpp    blocking wake-up stand-up sequence
+└── esp_node.h / .cpp     servo-angle conversion, home-pose setter
 ```
 
 Each module is intended to be usable in isolation. `kinematics` has no
 knowledge of trajectories, `trajectory` has no knowledge of the gait
-state machine, and `gait` has no knowledge of servo hardware. The only
-shared types are `point_t`, `step_t`, and `cycle_t` in `structs.h`.
+state machine, `awakeness` receives a servo-write function pointer (no
+knowledge of PCA9685), and `gait` has no knowledge of servo hardware.
+The shared types are `point_t`, `step_t`, `cycle_t`, `leg_t`, and
+`spider_t` in `structs.h`.
