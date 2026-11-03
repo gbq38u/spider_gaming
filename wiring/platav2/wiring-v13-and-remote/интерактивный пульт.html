@@ -1,0 +1,163 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Пульт — полная интерактивная схема</title><style>
+:root{--background:#f8fbfd;--foreground:#182b37;--viz-series-1:#2378aa;--viz-series-2:#c4662f}
+*{box-sizing:border-box}body{font:16px/1.45 system-ui,Arial,sans-serif;color:#182b37;background:#f8fbfd;margin:0}
+main{max-width:1180px;margin:auto;padding:20px}h1{font-size:25px;margin:0 0 8px}h2{font-size:19px;margin:22px 0 8px}p{max-width:90ch}
+.form-select{font:inherit;padding:6px;background:white;color:#182b37;border:1px solid #a9bdc7;border-radius:6px}
+.viz-controls{display:flex;flex-wrap:wrap;gap:14px}.form-label{display:grid;gap:5px}.text-muted{color:#526974}
+table{border-collapse:collapse;width:100%}th,td{padding:7px 9px;border-bottom:1px solid #cddbe0;text-align:left;vertical-align:top}
+@media(max-width:650px){main{padding:10px}table{font-size:13px}}
+</style></head><body><main><h1>Пульт — полная интерактивная схема</h1><p>18650 1S → MT3608 5,0 В → Arduino Nano и YL‑105; два джойстика управляют двумя клешнями. Выберите цепь для подсветки контактов.</p><section id="remote-interactive-mt3608-v1">
+  <h3>Пульт: общая схема соединений</h3>
+  <p class="text-muted">Arduino Nano 5 В · 2 джойстика · 18650 1S · MT3608 · YL‑105 + nRF24L01+PA/LNA</p>
+  <div class="viz-controls">
+    <label class="form-label">Показать соединения
+      <select class="form-select" id="rcw-filter">
+        <option value="all">Все</option>
+        <option value="power">Питание</option>
+        <option value="sticks">Джойстики</option>
+        <option value="radio">Радиосигналы</option>
+        <option value="caps">YL‑105 и конденсаторы</option>
+      </select>
+    </label>
+    <label class="form-check"><input class="form-check-input" type="checkbox" id="rcw-jp" checked><span class="form-check-label">Есть съёмная перемычка JP_PWR</span></label>
+  </div>
+  <p id="rcw-jp-info" aria-live="polite"></p>
+
+  <svg class="overview" viewBox="0 0 1000 520" role="img" aria-labelledby="rcw-title rcw-desc">
+    <title id="rcw-title">Общая схема электроники пульта</title>
+    <desc id="rcw-desc">Аккумулятор через выключатель питает вход повышающего преобразователя MT3608. Его выход 5 вольт через размыкаемую перемычку питает Nano, два джойстика и вход YL-105. Выход YL-105 3,3 вольта питает радиомодуль. Сигналы Nano к радио проходят через четыре резистивных делителя.</desc>
+    <g class="comp" data-comp="power"><rect x="18" y="65" width="145" height="108" rx="10"/><text x="90" y="98" text-anchor="middle">18650 1S</text><text class="minor" x="90" y="130" text-anchor="middle">держатель</text></g>
+    <g class="comp" data-comp="power"><rect x="210" y="77" width="105" height="84" rx="10"/><text x="262" y="110" text-anchor="middle">SW1</text><text class="minor" x="262" y="137" text-anchor="middle">выкл.</text></g>
+    <g class="comp" data-comp="power"><rect x="360" y="54" width="160" height="130" rx="10"/><text x="440" y="89" text-anchor="middle">MT3608</text><text class="minor" x="440" y="120" text-anchor="middle">вход 1S</text><text class="minor" x="440" y="148" text-anchor="middle">выход 5,0 В</text></g>
+    <g class="comp" data-comp="power" id="rcw-jp-box"><rect x="600" y="78" width="110" height="80" rx="10"/><text x="655" y="111" text-anchor="middle">JP_PWR</text><text class="minor" x="655" y="139" text-anchor="middle">съёмная</text></g>
+    <g class="comp" data-comp="core"><rect x="785" y="51" width="185" height="135" rx="10"/><text x="877" y="86" text-anchor="middle">Nano</text><text class="minor" x="877" y="117" text-anchor="middle">5V / GND</text><text class="minor" x="877" y="147" text-anchor="middle">A0–A3, D3–D4</text></g>
+    <path class="wire power" d="M163 91 H210 M315 91 H360"/>
+    <path class="wire power" id="rcw-jp-wire" d="M520 91 H600 M710 91 H785"/>
+    <path class="wire power" id="rcw-direct-wire" d="M520 91 H785" style="display:none"/>
+    <path class="wire ground" d="M163 153 V203 H340 V167 H360 M520 168 H745 V167 H785"/>
+    <text class="tiny" x="543" y="75">+5 В</text><text class="tiny" x="540" y="188">GND</text>
+    <text class="tiny" x="42" y="242">После JP_PWR: общие шины +5 В и GND к Nano, обоим джойстикам и YL‑105</text>
+    <g class="comp" data-comp="sticks"><rect x="85" y="300" width="225" height="134" rx="10"/><text x="197" y="333" text-anchor="middle">Левый джойстик</text><text class="minor" x="197" y="365" text-anchor="middle">VRx→A0 · VRy→A1</text><text class="minor" x="197" y="395" text-anchor="middle">SW→D3</text></g>
+    <g class="comp" data-comp="sticks"><rect x="385" y="300" width="225" height="134" rx="10"/><text x="497" y="333" text-anchor="middle">Правый джойстик</text><text class="minor" x="497" y="365" text-anchor="middle">VRx→A2 · VRy→A3</text><text class="minor" x="497" y="395" text-anchor="middle">SW→D4</text></g>
+    <g class="comp" data-comp="radio"><rect x="690" y="292" width="280" height="150" rx="10"/><text x="830" y="325" text-anchor="middle">YL‑105 + радио</text><text class="minor" x="830" y="357" text-anchor="middle">VCC вход 5 В</text><text class="minor" x="830" y="387" text-anchor="middle">радио внутри: 3,3 В</text><text class="minor" x="830" y="417" text-anchor="middle">CE/CSN/SCK/MO/MI</text></g>
+    <path class="wire link" d="M810 186 V271 H197 V300 M842 186 V283 H497 V300 M921 186 V292"/>
+    <text class="tiny" x="43" y="463">Сигналы Nano → YL‑105: D9/CE, D10/CSN, D13/SCK, D11/MO — через делители 1 кОм + 1,8 кОм.</text>
+    <text class="tiny" x="43" y="489">YL‑105 MI/MISO → Nano D12 напрямую; работоспособность этого входа проверить при испытании.</text>
+  </svg>
+
+  <div class="mobile-flow" aria-label="Структура питания пульта">
+    <p><strong>18650 (+)</strong> → SW1 → MT3608 IN+; <strong>18650 (−)</strong> → MT3608 IN−.</p>
+    <p><strong>MT3608 OUT+ 5,0 В</strong> <span id="rcw-mobile-jp">→ JP_PWR</span> → Nano 5V, оба VCC джойстиков, YL‑105 VCC.</p>
+    <p><strong>MT3608 OUT−</strong> → общий GND Nano, джойстиков и YL‑105.</p>
+    <p><strong>LED1:</strong> шина +5 В → R10 1 кОм → анод; катод → GND.</p>
+  </div>
+
+  <div class="wiring-section" data-group="power"><h4>1. Питание</h4>
+  <div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>Откуда</th><th>Куда</th><th>Провод</th></tr></thead>
+    <tbody>
+      <tr><td>18650 «+»</td><td>SW1 → MT3608 IN+</td><td>0,5 мм²</td></tr>
+      <tr><td>18650 «−»</td><td>MT3608 IN−</td><td>0,5 мм²</td></tr>
+      <tr><td>MT3608 OUT+</td><td id="rcw-power-route">JP_PWR → Nano 5V, оба VCC джойстиков, YL‑105 VCC</td><td>0,35–0,5 мм² магистраль</td></tr>
+      <tr><td>MT3608 OUT−</td><td>Nano GND, оба GND джойстиков, YL‑105 GND</td><td>0,35–0,5 мм² магистраль</td></tr>
+      <tr><td>Шина +5 В</td><td>R10 1 кОм → анод LED1; катод LED1 → общий GND</td><td>0,2 мм²</td></tr>
+    </tbody>
+  </table></div></div>
+
+  <div class="wiring-section" data-group="sticks"><h4>2. Джойстики</h4>
+  <div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>Контакт</th><th>Левый → Nano</th><th>Правый → Nano</th></tr></thead>
+    <tbody>
+      <tr><td>VCC</td><td>+5 В</td><td>+5 В</td></tr>
+      <tr><td>GND</td><td>GND</td><td>GND</td></tr>
+      <tr><td>VRx</td><td>A0</td><td>A2</td></tr>
+      <tr><td>VRy</td><td>A1</td><td>A3</td></tr>
+      <tr><td>SW</td><td>D3 · INPUT_PULLUP</td><td>D4 · INPUT_PULLUP</td></tr>
+    </tbody>
+  </table></div></div>
+
+  <div class="wiring-section" data-group="radio"><h4>3. Радио: Nano → YL‑105</h4>
+  <div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>Nano</th><th>Через</th><th>На YL‑105</th><th>Ответвление от входа YL‑105</th></tr></thead>
+    <tbody>
+      <tr><td>D9</td><td>R1 1 кОм</td><td>CE</td><td>R2 1,8 кОм → GND</td></tr>
+      <tr><td>D10</td><td>R3 1 кОм</td><td>CSN</td><td>R4 1,8 кОм → GND</td></tr>
+      <tr><td>D13 / SCK</td><td>R5 1 кОм</td><td>SCK</td><td>R6 1,8 кОм → GND</td></tr>
+      <tr><td>D11 / MOSI</td><td>R7 1 кОм</td><td>MO / MOSI</td><td>R8 1,8 кОм → GND</td></tr>
+      <tr><td>D12 / MISO</td><td>прямой провод</td><td>MI / MISO</td><td>запас по логическому уровню мал; при сбоях нужен буфер AHCT125</td></tr>
+      <tr><td>D10</td><td>R9 10 кОм → +5 В</td><td>подтяжка на стороне Nano до R3</td><td>—</td></tr>
+      <tr><td>—</td><td>не подключать</td><td>IRQ</td><td>опрос радио по SPI</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="divider-example" role="img" aria-label="Пример делителя: Nano D9 через резистор 1 кОм к CE адаптера YL-105; от точки CE резистор 1,8 кОм на землю">
+    <span>Nano D9 (5 В)</span><span>─ R1 1 кОм ─</span><span>● CE (≈3,2 В)</span><span>─ YL‑105 CE</span><span class="branch">└ R2 1,8 кОм → GND</span>
+  </div>
+  </div>
+
+  <div class="wiring-section" data-group="caps"><h4>4. Адаптер и конденсаторы</h4>
+  <div class="table-responsive"><table class="table table-sm">
+    <thead><tr><th>Узел</th><th>Подключение</th></tr></thead>
+    <tbody>
+      <tr><td>YL‑105 VCC / GND</td><td>+5 В / общий GND от MT3608</td></tr>
+      <tr><td>nRF24L01+PA/LNA</td><td>В гнездо YL‑105 после проверки ориентации модуля</td></tr>
+      <tr><td>C1 10 мкФ, электролит</td><td>«+» к выходу 3,3 В YL‑105 у радиогнезда; «−» к GND</td></tr>
+      <tr><td>C2 100 нФ, керамика</td><td>Параллельно C1, на 3,3 В и GND у радиогнезда</td></tr>
+    </tbody>
+  </table></div></div>
+
+  <p class="text-small">Провода сигналов и джойстиков — 0,2 мм². Перед подключением Nano настроить выход MT3608 на 5,0 В, подавать его на 5V, не VIN; после сборки проверить 5 В при передаче радио. Если 18650 без встроенной защиты, нужна отдельная защита 1S от переразряда. Все контакты сверять по надписям на самих модулях; радиомодуль без подписей вставлять только после проверки ориентации.</p>
+</section>
+<style>
+#remote-interactive-mt3608-v1 .overview{display:block;width:100%;height:auto;max-width:1000px;margin:.7rem auto}
+#remote-interactive-mt3608-v1 .overview .comp rect{fill:var(--card);stroke:var(--border);stroke-width:2}
+#remote-interactive-mt3608-v1 .overview .comp.is-faded{opacity:.3}
+#remote-interactive-mt3608-v1 .overview text{fill:var(--foreground);font:700 21px system-ui,sans-serif}
+#remote-interactive-mt3608-v1 .overview .minor{fill:var(--muted-foreground);font:500 16px system-ui,sans-serif}
+#remote-interactive-mt3608-v1 .overview .tiny{fill:var(--foreground);font:500 16px system-ui,sans-serif}
+#remote-interactive-mt3608-v1 .overview .wire{fill:none;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+#remote-interactive-mt3608-v1 .overview .power{stroke:var(--red)}
+#remote-interactive-mt3608-v1 .overview .ground{stroke:var(--muted-foreground)}
+#remote-interactive-mt3608-v1 .overview .signal{stroke:var(--blue);stroke-width:2.5}
+#remote-interactive-mt3608-v1 .overview .link{stroke:var(--border);stroke-width:2;stroke-dasharray:7 7}
+#remote-interactive-mt3608-v1 .mobile-flow{display:none}
+#remote-interactive-mt3608-v1 .divider-example{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem;margin:.8rem 0;color:var(--foreground);font-weight:600}
+#remote-interactive-mt3608-v1 .divider-example .branch{flex-basis:100%;margin-left:39%;color:var(--muted-foreground);font-weight:500}
+#remote-interactive-mt3608-v1 h4{margin:1rem 0 .3rem}
+@media(max-width:600px){#remote-interactive-mt3608-v1 .overview{display:none}#remote-interactive-mt3608-v1 .mobile-flow{display:block}#remote-interactive-mt3608-v1 .divider-example .branch{margin-left:0}}
+</style>
+<script>
+(() => {
+  const root=document.getElementById('remote-interactive-mt3608-v1');
+  const filter=root.querySelector('#rcw-filter');
+  const jp=root.querySelector('#rcw-jp');
+  const info=root.querySelector('#rcw-jp-info');
+  const jpBox=root.querySelector('#rcw-jp-box');
+  const jpWire=root.querySelector('#rcw-jp-wire');
+  const directWire=root.querySelector('#rcw-direct-wire');
+  const mobileJp=root.querySelector('#rcw-mobile-jp');
+  const powerRoute=root.querySelector('#rcw-power-route');
+  const sections=[...root.querySelectorAll('.wiring-section')];
+  const comps=[...root.querySelectorAll('.overview .comp[data-comp]')];
+  function render(){
+    const group=filter.value,hasJp=jp.checked;
+    sections.forEach(section=>section.hidden=group!=='all'&&section.dataset.group!==group);
+    comps.forEach(comp=>comp.classList.toggle('is-faded',group!=='all'&&comp.dataset.comp!=='core'&&comp.dataset.comp!==group&&!(group==='caps'&&comp.dataset.comp==='radio')));
+    jpBox.style.display=hasJp?'':'none';
+    jpWire.style.display=hasJp?'':'none';
+    directWire.style.display=hasJp?'none':'';
+    mobileJp.hidden=!hasJp;
+    powerRoute.textContent=(hasJp?'JP_PWR → ':'напрямую → ')+'Nano 5V, оба VCC джойстиков, YL‑105 VCC';
+    info.textContent=hasJp
+      ?'JP_PWR — отдельная двухконтактная гребёнка со съёмной перемычкой между MT3608 OUT+ и шиной 5 В. Это не вывод MT3608. Перед подключением USB к Nano перемычку снимают.'
+      :'Без JP_PWR провод MT3608 OUT+ идёт прямо на шину 5 В. Перед USB к Nano нужно физически отсоединить этот провод; выключатель SW1 на входе MT3608 не изолирует его выход.';
+  }
+  function save(){window.openai?.setWidgetState?.({modelContent:{group:filter.value,jp:jp.checked},privateContent:{group:filter.value,jp:jp.checked}})?.catch?.(()=>{});}
+  function restore(state){filter.value=['all','power','sticks','radio','caps'].includes(state?.group)?state.group:'all';jp.checked=typeof state?.jp==='boolean'?state.jp:true;render();}
+  filter.addEventListener('change',()=>{render();save();});
+  jp.addEventListener('change',()=>{render();save();});
+  restore(window.openai?.widgetState?.privateContent||{});
+  window.addEventListener('openai:set_globals',event=>{const state=event.detail?.globals?.widgetState?.privateContent;if(state)restore(state);});
+})();
+</script>
+<p>У радио на плате паука вход адаптера YL‑105 получает 5 В; радиомодуль получает 3,3 В с адаптера. У пульта та же схема питания радио.</p></main></body></html>
