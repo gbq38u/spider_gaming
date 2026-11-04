@@ -15,7 +15,7 @@ For example: we want to draw a circle C in a time T. We place 5 points on circle
 
 ![Cycle](./images/circle.jpg)
 
-To generate smooth movement the cubic interpolation is used:
+To generate smooth movement the Hermite cubic interpolation is used:
 
 ```
 q(t) = a·t³ + b·t² + c·t + d
