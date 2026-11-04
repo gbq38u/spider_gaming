@@ -1,3 +1,5 @@
+https://github.com/user-attachments/assets/8fedbcef-35fa-4909-a90e-01e50d04be16
+
 # Motion System Design
 
 THIS PART OF TEXT IS HUMAN-GENERATED. THE AI-GENERATED PART WILL BE MARKED LATER IN TEXT.
