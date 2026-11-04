@@ -2,19 +2,16 @@
 
 THIS PART OF TEXT IS HUMAN-GENERATED. THE AI-GENERATED PART WILL BE MARKED LATER IN TEXT.
 
-This is minimal version of the design, now it controls one leg without interacting with drivers. 
-Soon we will rewrite the code to make a proper gait with 6 legs involved in motion.
+This is starting version of the design, now it controls 6 legs making beautiful tripod gate locomotion.
 
 The motion for now is limited by translation of the body along xy plane.
-
-Current shape of the step is a test, it has a lot of flaws and we will get rid of it in future.
 
 ## MAIN IDEA
 
 So, the goal of this version of code was to create a logic to generate trajectory for an all-directional step (on a xy plane).
 Out method to generate a trajectory to follow is to compute some control points and velocities on the trajectory and calculate coefficients of cubic interpolation between those points.
 
-For example: we want to draw a circle C with our leg in a time T. We place 5 points on circle C and, knowing time T, compute velocities for them in 3D space. 
+For example: we want to draw a circle C in a time T. We place 5 points on circle C and, knowing time T, compute velocities for them in 3D space so the circle is completed in time T. 
 
 ![Cycle](./images/circle.jpg)
 
@@ -24,6 +21,8 @@ To generate smooth movement the cubic interpolation is used:
 q(t) = a·t³ + b·t² + c·t + d
 dq(t)/dt = 3a·t² + 2b·t + c
 ```
+
+by knowing q and dq/dt of adjacent control points we can acquire a, b, c and d coefficient of interpolation between them.
 
 For faster reaction to terrain environment changes it must be computed on esp32, which leads to
 
@@ -38,19 +37,19 @@ The idea is succesfully stolen from NUKE (Nearly Universal Kinematics Engine) (h
 Everyone want the movement to be smooth as baby's butt, here appears
 
 THE SECOND PROBLEM:
-While changing the directory of the step, the trajectory will not be continuous.
+While changing the direction of the step, the trajectory will not be continuous.
 
 SOLUTION is pretty simple actually, to describe it I would need to introduce you to our movement logic (which is stolen and improved too):
-Lets call a trajectory we want to follow a cycle. Divide the cycle into parts called steps (IT'S NOT THE TRAJECTORY, IT'S A PART OF IT), so each step is between adjacent control points.
+Lets call a trajectory we want to follow a cycle. The cycle is divided by control points, the part of the cycle between adjacent control points is called step.
 The trajectory between the steps is approximated with cubic interpolation.
 
 For example: same circle with 5 points, the parts of circle between the points are steps.
 
 ![changing cycle on a fly](./images/cycles.jpg)
 
-What if we want to change the plane in which circle is existing to a different one smoothly?
-In our implementation we generate a separate cycle for this new circle, then we look which step of the initial cycle the end-effector moves along.
-Let's call it step i. The next control point (end of the step i, which is the same point as the start of step i + 1) stays unchanged (with it's velocity). 
+What if we want to change the trajectory from a circle in one plane to be a circle in other plane?
+In our implementation we generate a separate cycle for this new circle, then we look which step of the initial cycle the end-effector moves along. Let's call it step i. 
+The next control point (end of the step i, which is the same point as the start of step i + 1) stays unchanged (with it's velocity). 
 The following one (end of step i + 1) changes to the corresponding point on the separate cycle generated for a new circle, and the coefficients of step i + 1 in initial cycle are changed to match new points.
 
 That's the main idea of how to make all-directional smooth movement.
@@ -66,7 +65,7 @@ The system is split across two processors:
   ┌──────────────────┐                   ┌──────────────────────┐
   │                  │                   │  gait state machine  │
   │    controller    │                   │  trajectory gen      │
-  │   (in future)    │  /esp/speed  ───► │  inverse kinematics  │
+  │                  │  /esp/speed  ───► │  inverse kinematics  │
   │                  │  (service)        │  Jacobian / DLS      │
   └──────────────────┘                   │  polynomial eval     │
                                          │  PCA9685 servo PWM   │
